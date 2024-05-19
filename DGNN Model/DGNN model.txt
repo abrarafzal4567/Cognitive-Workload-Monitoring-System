@@ -1,0 +1,165 @@
+import pandas as pd
+import numpy as np
+from keras.models import Sequential
+from keras.layers import Bidirectional, LSTM, Dense, GRU, Dropout
+from keras.utils import to_categorical
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.metrics import confusion_matrix, classification_report
+import matplotlib.pyplot as plt
+import seaborn as sns
+from keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
+import os
+
+# Load the data
+data_high = pd.read_csv('Highmode.csv')
+data_low = pd.read_csv('Lowmode.csv')
+data = pd.concat([data_high, data_low])
+
+# Preprocess the data
+X = data.iloc[:, 1:15].values  # Exclude the first column (subject information)
+y = data.iloc[:, 15].values
+
+# Map labels
+mapping = {1: 'low', 2: 'low', 3: 'low', 4: 'average', 5: 'average', 6: 'average', 7: 'high', 8: 'high', 9: 'high'}
+y = np.vectorize(mapping.get)(y)
+
+# Encode labels
+encoder = LabelEncoder()
+y = encoder.fit_transform(y)
+y = to_categorical(y)
+
+# Scale features
+scaler = StandardScaler()
+X = scaler.fit_transform(X)
+
+# Split the data into train, test, and validation sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.125, random_state=42)
+
+# Reshape input to be 3D [samples, timesteps, features]
+X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
+X_val = X_val.reshape((X_val.shape[0], 1, X_val.shape[1]))
+X_test = X_test.reshape((X_test.shape[0], 1, X_test.shape[1]))
+
+# Define the BiLSTM and GRU model
+model = Sequential()
+model.add(Bidirectional(LSTM(64, return_sequences=True), input_shape=(X_train.shape[1], X_train.shape[2])))
+model.add(Dropout(0.5))
+model.add(Bidirectional(LSTM(32, return_sequences=True)))
+model.add(Dropout(0.5))
+model.add(GRU(64, return_sequences=True))
+model.add(Dropout(0.5))
+model.add(GRU(32))
+model.add(Dropout(0.5))
+model.add(Dense(y_train.shape[1], activation='softmax'))
+
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy', 'Precision', 'Recall'])
+
+# Callbacks
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+model_checkpoint = ModelCheckpoint('best_model.h5', monitor='val_loss', save_best_only=True)
+def scheduler(epoch, lr):
+    if epoch < 10:
+        return lr
+    else:
+        return lr * np.exp(-0.1)
+lr_scheduler = LearningRateScheduler(scheduler)
+
+# Fit model
+history = model.fit(
+    X_train, y_train, 
+    epochs=50, 
+    batch_size=32, 
+    verbose=2, 
+    shuffle=False, 
+    validation_data=(X_val, y_val), 
+    callbacks=[early_stopping, model_checkpoint, lr_scheduler]
+)
+
+# Save the model
+model.save('My_New_model.h5')
+
+# Load the best model
+best_model = Sequential()
+best_model.load_weights('best_model.h5')
+
+# Make predictions
+y_pred = best_model.predict(X_test)
+
+# Convert probabilities to class labels
+y_pred = np.argmax(y_pred, axis=1)
+
+# Convert test labels to class labels
+y_test_labels = np.argmax(y_test, axis=1)
+
+# Create a confusion matrix
+cm = confusion_matrix(y_test_labels, y_pred)
+
+# Plot the confusion matrix
+plt.figure(figsize=(10,7))
+sns.heatmap(cm, annot=True, fmt='d')
+plt.xlabel('Predicted')
+plt.ylabel('Truth')
+plt.savefig('confusion_matrix.png')
+plt.close()
+
+# Print a classification report
+report = classification_report(y_test_labels, y_pred, target_names=encoder.classes_)
+print(report)
+
+# Save the classification report
+with open('classification_report.txt', 'w') as f:
+    f.write(report)
+
+# Plot accuracy for training and validation sets
+plt.figure(figsize=(6, 4))
+plt.plot(history.history['accuracy'], label='Train Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.legend()
+plt.title('DGNN Model Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.savefig('accuracy.png')
+plt.close()
+
+# Plot loss for training and validation sets
+plt.figure(figsize=(6, 4))
+plt.plot(history.history['loss'], label='Train Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.legend()
+plt.title('DGNN Model Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.savefig('loss.png')
+plt.close()
+
+# Additional plots for precision and recall
+plt.figure(figsize=(6, 4))
+plt.plot(history.history['precision'], label='Train Precision')
+plt.plot(history.history['val_precision'], label='Validation Precision')
+plt.legend()
+plt.title('DGNN Model Precision')
+plt.xlabel('Epochs')
+plt.ylabel('Precision')
+plt.savefig('precision.png')
+plt.close()
+
+plt.figure(figsize=(6, 4))
+plt.plot(history.history['recall'], label='Train Recall')
+plt.plot(history.history['val_recall'], label='Validation Recall')
+plt.legend()
+plt.title('DGNN Model Recall')
+plt.xlabel('Epochs')
+plt.ylabel('Recall')
+plt.savefig('recall.png')
+plt.close()
+
+# Perform k-fold cross-validation
+kf = KFold(n_splits=5, shuffle=True, random_state=42)
+for train_index, val_index in kf.split(X):
+    X_train_kf, X_val_kf = X[train_index], X[val_index]
+    y_train_kf, y_val_kf = y[train_index], y[val_index]
+    X_train_kf = X_train_kf.reshape((X_train_kf.shape[0], 1, X_train_kf.shape[1]))
+    X_val_kf = X_val_kf.reshape((X_val_kf.shape[0], 1, X_val_kf.shape[1]))
+    model.fit(X_train_kf, y_train_kf, epochs=50, batch_size=32, verbose=2, validation_data=(X_val_kf, y_val_kf), shuffle=False)
