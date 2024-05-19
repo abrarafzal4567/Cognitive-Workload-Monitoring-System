@@ -1,0 +1,49 @@
+import numpy as np
+import pandas as pd
+from scipy.signal import stft
+
+# Load EEG data (replace 'sub01_hi.csv' with your file path)
+eeg_data = np.genfromtxt('sub01_lo.csv', delimiter=',')
+
+# Parameters
+sampling_frequency = 128  # Hz
+time_duration = 150  # seconds
+total_samples = eeg_data.shape[0]
+total_channels = eeg_data.shape[1]
+nperseg = 256  # Segment length for STFT
+noverlap = nperseg // 2  # Overlap between segments
+
+# Define frequency bands
+frequency_bands = {
+    'Delta': (0.5, 4),
+    'Theta': (4, 8),
+    'Alpha': (8, 13),
+    'Beta': (13, 30),  # Combining Low Beta and High Beta into one band
+    'Gamma': (30, 60)
+}
+
+# Initialize arrays to store power in frequency bands for each channel
+power_bands = {band: np.zeros((total_channels,)) for band in frequency_bands}
+
+# Perform STFT and compute power in frequency bands for each channel
+for channel in range(total_channels):
+    f, t, Zxx = stft(eeg_data[:, channel], fs=sampling_frequency, nperseg=nperseg, noverlap=noverlap)
+    freq_resolution = f[1] - f[0]
+    for band, (fmin, fmax) in frequency_bands.items():
+        band_idx = np.where((f >= fmin) & (f < fmax))[0]
+        band_power = np.sum(np.abs(Zxx[band_idx, :]) ** 2, axis=0) * freq_resolution
+        power_bands[band][channel] = np.mean(band_power)
+
+# Create DataFrame to store power bands for each channel
+power_bands_df = pd.DataFrame(power_bands)
+
+# Insert the channel numbers as the first column
+power_bands_df.insert(0, 'Channel', range(1, total_channels + 1))
+
+# Rename the 'Beta' column to indicate it includes both Low Beta and High Beta
+power_bands_df.rename(columns={'Beta': 'Low/High Beta'}, inplace=True)
+
+# Save DataFrame to CSV
+power_bands_df.to_csv('frequency_bands_lo.csv', index=False)
+
+print("Frequency bands saved to 'frequency_bands.csv'")

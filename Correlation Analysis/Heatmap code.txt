@@ -1,0 +1,44 @@
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Load your EEG data files for low mode and high mode
+low_mode_file = "Low.csv"
+high_mode_file = "High.csv"
+
+# Load low mode EEG data
+low_mode_data = pd.read_csv(low_mode_file)
+
+# Use the first row as column names
+low_mode_data.columns = [f"Channel{i}" for i in range(1, 16)]
+
+# Drop the last column (assuming it's the label column)
+low_mode_data = low_mode_data.iloc[:, :-1]
+
+# Load high mode EEG data
+high_mode_data = pd.read_csv(high_mode_file)
+
+# Use the first row as column names
+high_mode_data.columns = [f"Channel{i}" for i in range(1, 16)]
+
+# Drop the last column (assuming it's the label column)
+high_mode_data = high_mode_data.iloc[:, :-1]
+
+# Calculate the correlation matrix for low mode
+low_mode_correlation_matrix = low_mode_data.corr()
+
+# Create a heatmap for low mode
+plt.figure(figsize=(10, 8))
+sns.heatmap(low_mode_correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+plt.title("Correlation Heatmap of EEG Channels (Low Mode)")
+plt.show()
+
+# Calculate the correlation matrix for high mode
+high_mode_correlation_matrix = high_mode_data.corr()
+
+# Create a heatmap for high mode
+plt.figure(figsize=(10, 8))
+sns.heatmap(high_mode_correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+plt.title("Correlation Heatmap of EEG Channels (High Mode)")
+plt.show()
